@@ -41,7 +41,7 @@ object WeiboCommentStreaming extends SparkTool {
       })
       .map(row => {
         val article_id = row.getAs[String]("article_id")
-        val score = row.getAs[String]("score")
+        val score = row.getAs[Double]("score")
         article_id + "\t" + score
       }).print()
 
