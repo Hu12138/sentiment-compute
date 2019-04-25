@@ -4,6 +4,7 @@ import com.shujia.util.SparkTool
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.hbase.client.{Get, HConnectionManager, Put}
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.kafka.KafkaUtils
 import org.apache.spark.streaming.{Durations, StreamingContext}
 import redis.clients.jedis.Jedis
@@ -13,7 +14,7 @@ object WeiboCommentStreaming extends SparkTool {
     * spark配置初始化方法，初始化conf对象
     */
   override def init(args: Array[String]): Unit = {
-    conf.setMaster("local[4]")
+    conf.setMaster("local[8]")
   }
 
 
@@ -46,14 +47,16 @@ object WeiboCommentStreaming extends SparkTool {
       ssc,
       "node1:2181,node2:2181,node3:2181",
       "comment1",
-      Map("WeiBoCommentTopic" -> 4)
+      Map("WeiBoCommentTopic1" -> 1)
+      , StorageLevel.DISK_ONLY
     )
+//    DS.print()
 
 
     /**
       * 实时统计情感走势
       */
-    DS
+    val filterDS = DS
       .map(_._2)
       .transform(rdd => {
         val DF = sqlContext.read.json(rdd)
@@ -90,40 +93,46 @@ object WeiboCommentStreaming extends SparkTool {
         data
       })
 
-      .map(row => {
-        val sentiment_id = row.getAs[String]("sentiment_id")
-        val created_at = row.getAs[String]("created_at")
-        val score = row.getAs[Double]("score")
-        val newScorce = if (score < 0.4) 0 else if (score > 0.6) 2 else 1
+    filterDS.print()
+//
+//    val cuntDS = filterDS
+//      .map(row => {
+//        val sentiment_id = row.getAs[String]("sentiment_id")
+//        val created_at = row.getAs[String]("created_at")
+//        val score = row.getAs[Double]("score")
+//        val newScorce = if (score < 0.4) 0 else if (score > 0.6) 2 else 1
+//
+//        (sentiment_id + "\t" + created_at.substring(0, 11) + "\t" + newScorce, 1)
+//      })
+//      //统计每个舆情每个时间正负情感数
+//      .updateStateByKey((seq: Seq[Int], opt: Option[Int]) => {
+//      Some(seq.sum + opt.getOrElse(0))
+//    })
+//    cuntDS.print()
 
-        (sentiment_id + "\t" + created_at.substring(0, 11) + "\t" + newScorce, 1)
-      })
-
-      //统计每个舆情每个时间正负情感数
-      .updateStateByKey((seq: Seq[Int], opt: Option[Int]) => {
-        Some(seq.sum + opt.getOrElse(0))
-      })
-      .foreachRDD(rdd => {
-        rdd.foreachPartition(i => {
-          //创建redis  连接
-          //创建连接
-          val jedis = new Jedis("node1", 6379)
-          i.foreach(line => {
-            val sentiment_id = line._1.split("\t")(0)
-            val created_at = line._1.split("\t")(1)
-            val newScorce = line._1.split("\t")(2)
-
-            println(line)
-
-            //默认连接db0  可以手动修改
-            jedis.select(0)
-            jedis.hset(sentiment_id, created_at, newScorce + ":" + line._2)
-            jedis.flushAll()
-          })
-
-          jedis.close()
-        })
-      })
+    //
+    //    cuntDS.transform(rdd => {
+    //      rdd.mapPartitions(i => {
+    //        //创建redis  连接
+    //        //创建连接
+    //        val jedis = new Jedis("node1", 6379)
+    //        i.foreach(line => {
+    //          val sentiment_id = line._1.split("\t")(0)
+    //          val created_at = line._1.split("\t")(1)
+    //          val newScorce = line._1.split("\t")(2)
+    //
+    //          println(line)
+    //
+    //          //默认连接db0  可以手动修改
+    //          jedis.select(0)
+    //          jedis.hset(sentiment_id, created_at, newScorce + ":" + line._2)
+    //          jedis.flushAll()
+    //        })
+    //
+    //        jedis.close()
+    //        i
+    //      })
+    //    }).print()
 
     ssc.start()
     ssc.awaitTermination()
